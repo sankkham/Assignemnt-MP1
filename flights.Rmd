@@ -1,0 +1,289 @@
+---
+title: "Sanket_Khamkar_Assignment MP1"
+author: "Sanket"
+date: "2024-10-14"
+output: html_document
+---
+
+```{r}
+
+
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+library(readr)
+library(forecast)
+library(knitr)
+library(TTR)
+library(dplyr)
+library(ggplot2)
+
+departures  <- read_csv("C:/Users/Sanket Khamkar/Downloads/flightVolume.csv")
+names(departures )
+#1. Create Timeseries
+permanent_ts <- ts(departures$permanent, frequency = 12, start = c(1976,1))
+
+#flights_raw <- file_path$permanent
+#flights_TS <- ts(flights_raw,frequency = 12, start = c(1976,1))
+
+autoplot(permanent_ts) + ggtitle("Permanent Departures Over Time") + xlab("Time") + ylab("Permanent Departures")
+
+```
+2. Verify how much history to include in your analysis. 
+The dataset contains 498 data points, which likely spans over 41.5 years (if each point represents a month). This is more than sufficient to capture long-term trends and any seasonality in the data. For this analysis, we will include all available data, but if computational efficiency or model performance is a concern, a more recent subset of 5-10 years could still give robust results.
+
+3. Hypothesize if the dataset has trend, seasonality, or both. 
+Based on the initial exploration of the time series data for "permanent" departures:
+Trend: The dataset may show a long-term trend because of the visible upward and downward shifts in the time series over time. This suggests that there is a gradual increase or decrease in the number of departures across a longer period.
+
+Seasonality: The dataset likely exhibits seasonality due to the potential presence of repeating patterns over consistent intervals (e.g., months). Seasonal trends in travel-related data, like departures, are common due to recurring events (e.g., holidays, vacation periods, etc.).
+ 
+4. Verify using Acf
+The significant auto correlations at regular lags suggest the presence of seasonality in the data.
+The slow decay in the ACF function can also hint at a trend, indicating persistence in the series over time.
+
+
+```{r}
+Acf(permanent_ts)
+```
+
+
+5. Verify using decomposition
+The decomposition analysis was performed using a multiplicative model, which broke the time series into three components:
+Trend: A visible long-term movement, confirming the presence of a trend.
+Seasonality: The repeating cyclical pattern, confirming that the data exhibits seasonal behavior.
+Residual (Noise): Random fluctuations that are not explained by trend or seasonality.
+```{r}
+
+decomposed <- decompose(permanent_ts, type = "multiplicative")
+autoplot(decomposed)
+
+stl_decomp <- stl(permanent_ts,s.window ="periodic")
+plot(stl_decomp)
+attributes(stl_decomp)
+
+# Lets print out a seasonal adjustment
+seasadj(stl_decomp)
+# Plot a line on the graph
+plot(permanent_ts)
+lines(seasadj(stl_decomp), col="Red")
+# Default period forecast
+f_stl <- forecast(stl_decomp)
+# you can pass the # of period
+f_stl <- forecast(stl_decomp,h=15)
+f_stl
+plot(f_stl)
+# There is more than one way to do things
+decomp_elec <- decompose(permanent_ts)
+
+# Each one shows different attributes 
+attributes(decomp_elec)
+seasadj(decomp_elec)
+```
+6. Choose an accuracy measure
+For this dataset, since departures are on a numeric scale and errors need to be minimized across different models, Mean Squared Error (MSE) would be a good choice. It allows us to penalize larger errors more significantly, which can be important when forecasting a time series with both trend and seasonality, as large deviations can affect the model's overall performance.
+Thus, I will use MSE (Mean Squared Error) as the accuracy measure for comparing the forecasting models.
+
+7. Create a forecast model for the next 12 months. Include Naive, Average, Exponential Smoothing, HoltWinters, and Decomposition (both types). 
+```{r}
+
+start(permanent_ts)  # Check the start period of the time series
+end(permanent_ts)    # Check the end period of the time series
+frequency(permanent_ts)  # Check if it is monthly (should return 12)
+# Assuming you want to use all data except the last 12 months for training
+# Use data up to June 2016 for training (training data ends at June 2016)
+train <- window(permanent_ts, end = c(2016, 6))
+
+# Use data from July 2016 to June 2017 for testing
+test <- window(permanent_ts, start = c(2016, 7))  # The last 12 months for test
+
+# 1. Naive model
+naive_model <- naive(train, h = 12)
+naive_forecast <- forecast(naive_model, h = 12)
+
+# 2. Average method
+mean_forecast <- meanf(train, h = 12)
+
+# 3. Exponential Smoothing
+exp_smooth_model <- ses(train, h = 12)
+exp_smooth_forecast <- forecast(exp_smooth_model, h = 12)
+
+# 4. Holt-Winters Additive Model
+hw_add_model <- hw(train, seasonal = "additive", h = 12)
+hw_add_forecast <- forecast(hw_add_model)
+
+# 5. Holt-Winters Multiplicative Model
+hw_mult_model <- hw(train, seasonal = "multiplicative", h = 12)
+hw_mult_forecast <- forecast(hw_mult_model)
+
+# 6. Decomposition Forecast
+# Decompose the time series
+decomposed_add <- decompose(permanent_ts, type = "additive")
+decomposed_mult <- decompose(permanent_ts, type = "multiplicative")
+
+# Remove NA values from the trend component
+trend_add <- na.omit(decomposed_add$trend)
+trend_mult <- na.omit(decomposed_mult$trend)
+
+# Forecast based on decomposition (seasonal naive for decomposition)
+decomp_add_forecast <- naive(trend_add, h = 12)
+decomp_mult_forecast <- naive(trend_mult, h = 12)
+
+
+# Plot forecasts
+autoplot(naive_forecast) + ggtitle("Naive Forecast")
+autoplot(mean_forecast) + ggtitle("Mean Forecast")
+autoplot(exp_smooth_forecast) + ggtitle("Exponential Smoothing Forecast")
+autoplot(hw_add_forecast) + ggtitle("Holt-Winters Additive Forecast")
+autoplot(hw_mult_forecast) + ggtitle("Holt-Winters Multiplicative Forecast")
+autoplot(decomp_add_forecast) + ggtitle("Decompose Additive Forecast")
+autoplot(decomp_mult_forecast) + ggtitle("Decompose Multiplicative Forecast")
+
+# Display results for all models
+print(naive_forecast)
+print(mean_forecast)
+print(exp_smooth_forecast)
+print(hw_add_forecast)
+print(hw_mult_forecast)
+print(decomp_add_forecast)
+print(decomp_mult_forecast)
+```
+8. Show model rank with accuracy measures
+```{r}
+# Load the necessary library
+library(forecast)
+accuracy(naive_model, test)
+accuracy(mean_forecast, test)
+accuracy(exp_smooth_model, test)
+accuracy(hw_add_model, test)
+accuracy(hw_mult_model, test)
+accuracy(trend_add, test)
+accuracy(trend_mult, test)
+
+```
+Ranking the Models Based on RMSE:
+Best RMSE (Lowest): Decomposition Additive / Multiplicative (RMSE = 1.0385)
+Second Best: Holt-Winters Additive (RMSE = 1.4549)
+Third Best: Holt-Winters Multiplicative (RMSE = 1.4605)
+Fourth Best: Exponential Smoothing (RMSE = 1.8539)
+Fifth Best: Naive Model (RMSE = 2.0542)
+Worst: Mean Model (RMSE = 3.8169)
+
+Ranking Based on MAE:
+Best MAE (Lowest): Decomposition Additive / Multiplicative (MAE = 0.8771)
+Second Best: Holt-Winters Additive (MAE = 1.2599)
+Third Best: Holt-Winters Multiplicative (MAE = 1.2711)
+Fourth Best: Naive Model (MAE = 1.5725)
+Fifth Best: Exponential Smoothing (MAE = 1.6475)
+Worst: Mean Model (MAE = 3.3637)
+
+Ranking Based on MAPE:
+Best MAPE (Lowest): Decomposition Additive / Multiplicative (MAPE = 10.8213%)
+Second Best: Holt-Winters Additive (MAPE = 19.7079%)
+Third Best: Holt-Winters Multiplicative (MAPE = 19.7876%)
+Fourth Best: Naive Model (MAPE = 19.5403%)
+Fifth Best: Exponential Smoothing (MAPE = 25.0030%)
+Worst: Mean Model (MAPE = 44.0849%)
+
+Best Model Overall:
+The Decomposition Additive and Decomposition Multiplicative models have the lowest RMSE, MAE, and MAPE, making them the best-performing models overall.
+Holt-Winters Additive also performs well, ranking second in all accuracy measures.
+
+9. Choose which models and how are you going to use them for Forecasting
+Decomposition Additive and Decomposition Multiplicative models are the best choices for forecasting, given their superior performance in accuracy measures (lowest RMSE, MAE, and MAPE).
+
+Decomposition Models:
+These models work well when your data exhibits both a trend and seasonality. By decomposing the data into trend, seasonality, and residuals, these models provide a better understanding of the underlying patterns and allow for more accurate future forecasts.
+They also had the lowest error metrics, meaning they are able to capture the data structure effectively, providing reliable forecasts for the next 12 months.
+
+Holt-Winters Additive:
+This model would be the second-best choice, especially if you believe that the seasonality is constant over time (additive seasonality).
+It performed well on RMSE and MAE and is effective for data with seasonal patterns.
+
+Final Decision:
+For the most accurate forecasting, I recommend using Decomposition Additive or Decomposition Multiplicative. These models will likely provide the most reliable results for forecasting the next 12 months based on the data patterns.
+If for any reason the decomposition models cannot be applied, Holt-Winters Additive would be the next best alternative.
+
+10. Provide the forecast for the next 12 months (point and range) and explain why you feel confident with these forecasts
+
+```{r}
+# Decomposing the time series (if not already done)
+decomposed_multi <- decompose(permanent_ts, type = "multiplicative")
+
+# Handle NA values in the trend and seasonal components
+trend_cleaned <- na.omit(decomposed_multi$trend)  # Remove NAs from trend
+seasonal_cleaned <- na.omit(decomposed_multi$seasonal)  # Remove NAs from seasonality
+
+# Check if there is enough data to forecast
+if (length(trend_cleaned) >= 12 && length(seasonal_cleaned) >= 12) {
+  
+  # Use the last 12 months of the trend and seasonality
+  last_trend_value <- tail(trend_cleaned, 1)  # Last trend value, removing NAs
+  seasonal_pattern <- seasonal_cleaned[1:12]  # Seasonal pattern for one year
+
+  # Replicate the last trend value to match the length of the seasonal pattern (12 months)
+  trend_replicated <- rep(last_trend_value, length(seasonal_pattern))
+
+  # Generate point forecasts for the next 12 months by adding the last trend value to the seasonal component
+  point_forecast <- trend_replicated + seasonal_pattern
+
+  # Assuming we use residuals from decomposition to calculate confidence intervals
+  residuals <- na.omit(decomposed_multi$random)  # Remove NAs from residuals
+  forecast_std_error <- sd(residuals, na.rm = TRUE)  # Standard deviation of residuals
+
+  # 95% confidence interval (range)
+  conf_interval <- 1.96 * forecast_std_error
+  lower_bound <- point_forecast - conf_interval
+  upper_bound <- point_forecast + conf_interval
+
+  # Create a data frame to display the results
+  forecast_df <- data.frame(
+    Month = 1:12,
+    Point_Forecast = point_forecast,
+    Lower_Bound = lower_bound,
+    Upper_Bound = upper_bound
+  )
+
+  # Print the forecast with the confidence intervals
+  print(forecast_df)
+
+  # Plot the forecast with updated `linewidth`
+  library(ggplot2)
+  ggplot(forecast_df, aes(x = Month)) +
+    geom_line(aes(y = Point_Forecast), color = "blue", linewidth = 1) +  # Use linewidth instead of size
+    geom_ribbon(aes(ymin = Lower_Bound, ymax = Upper_Bound), fill = "lightblue", alpha = 0.4) +
+    ggtitle("12-Month Forecast with Confidence Intervals (Decomposition Multiplicative)") +
+    xlab("Month") +
+    ylab("Forecast Value") +
+    theme_minimal()
+
+} else {
+  warning("Not enough data after removing NAs to generate forecast.")
+}
+
+```
+
+We are using a method called the Decomposition Multiplicative model to predict what will happen over the next 12 months. This method helps us understand two main things in the data: the overall pattern (called the trend) and regular ups and downs that happen at certain times (called seasonality).
+
+To predict the future, I multiplied the last known trend by the repeating seasonal pattern for each of the next 12 months.
+This gives me the point forecast, or what I expected to happen each month based on the past.
+
+Confidence Intervals (Range of Possibility):
+I can also calculate a confidence interval, which tells us how much uncertainty there is in our forecast.
+A 95% confidence interval means we expect the actual numbers to fall within this range 95% of the time. This range helps us understand that the future could be slightly better or worse than our prediction, but it gives us a reliable window of possibility.
+
+Visualization:
+To help make sense of the forecast, I used a graph that shows the point forecast along with a shaded area that represents the confidence interval (the range where the real outcome might fall). This way, you can see both prediction and how certain we are about it.
+
+A 95% upper bound confidence interval is calculated using 1.96 * standard deviation of residuals.
+This provides a range within which we expect the actual values to fall with 95% upper bound confidence.
+
+Why I Feel Confident with These Forecasts:
+
+Best-Fitting Model: I chose this method because it best fits the data, meaning it understands how the seasonal ups and downs get bigger as the trend rises. This makes the forecast more reliable because it matches how the data behaves.
+
+Catching Patterns: The model does a great job of breaking down the data into its long-term trends and repeating patterns, so we’re not missing anything important. This helps us predict more accurately.
+
+Confidence in the Range: I used the leftover "noise" in the data (called residuals) to figure out how sure we are about the forecast. The range we show gives us a good sense of where the actual numbers will end up, even if they’re not exactly what we predicted.
+
+Trust in the Forecast: The forecast is based on solid math and past data, which means it’s a trustworthy tool for making decisions about the future. You can feel confident using these numbers to plan ahead because they’re based on proven statistical methods.
+
+In simple terms, this model helps us make smart predictions about what will happen next, while also giving us a range to account for uncertainty. It’s a useful way to understand future trends and patterns based on what we’ve seen in the past.
